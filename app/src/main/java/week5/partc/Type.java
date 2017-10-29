@@ -24,4 +24,20 @@ enum Type {
 	MINUS,		// -
 	TIMES,		// *
 	DIVIDE,		// /
+	START,		// Used in the parser to start an equation. Copies the first item as-is.
+	CAST_TO_INCH, // Used in the parser to denote casting.
+	CAST_TO_POINT; // Used in the parser to denote casting.
+
+	public boolean isPriority(){
+		return this == DIVIDE || this == TIMES;
+	}
+
+	public boolean isOperation(){
+		return isPriority() || this == PLUS || this == MINUS || this == CAST_TO_INCH || this == CAST_TO_POINT;
+	}
+
+	public boolean isUnit(){
+		return this == INCH || this == POINT;
+	}
+
 }

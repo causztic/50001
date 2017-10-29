@@ -1,7 +1,10 @@
 package week5.partc;
 
 /*
- * TODO (optional) define your grammar here
+ * The calculator is able to handle the standard arithmetic methods of prioritizing
+ * Brackets first by recursion,
+ * then multiplication and division,
+ * then normal addition and subtraction.
  */
 
 import java.util.ArrayList;
@@ -29,13 +32,14 @@ class Parser {
 
 		Equation(){
 			parent = null;
-			operations.add(Type.PLUS); // always add the first value.
+			operations.add(Type.START); // the first operation is always START to copy the first number in as-is.
 		}
 
 		Equation(List<Lexer.Token> tokens){
 			this();
 			this.tokens = tokens;
 		}
+
 
 		void setParent(Equation parent){
 			this.parent = parent;
@@ -59,22 +63,50 @@ class Parser {
 
 		// Recursively evaluate the equation and their subsequent sub-equations.
 		Value evaluate(){
-			System.out.println("Tokens: " + tokens);
 			Value result = new Value(0.0, ValueType.SCALAR);
 
 			// create Value and Operation objects
 			for (int i = 0; i < tokens.size(); i++){
 				if (tokens.get(i) == null){
 					values.add(children.remove(0).evaluate());
-				} else if (tokens.get(i).type == Type.NUMBER){
-					if (i+1 < tokens.size() && tokens.get(i+1).isUnit()){
-						values.add(new Value(Double.parseDouble(tokens.get(i).text), evalValueType(tokens.get(i+1).type)));
+				}
+				else if (tokens.get(i).type == Type.MINUS){
+					if (i + 1 < tokens.size() && tokens.get(i+1) == null) {
+						operations.add(Type.MINUS);
+						// it is a negative but followed by a sub equation, continue
+						continue;
+					}
+
+					// it is a minus sign, set the value to be negative
+					if (i != 0 && !tokens.get(i-1).type.isOperation()){
+						// if the one before is not an operation, set it to plus.
+						operations.add(Type.PLUS);
+					}
+
+					if (i + 1 < tokens.size() && tokens.get(i+1).type == Type.NUMBER){
+						double temp = Double.parseDouble(tokens.get(i+1).text) * -1;
+						i++;
+						if (i + 2 < tokens.size() && tokens.get(i+2).type.isUnit()){
+							// if there is a unit for the negative number
+							// multiply by a constant if it is in inches to store as points.
+							values.add(new Value(temp * ( tokens.get(i+2).type == Type.INCH ? PT_PER_IN : 1), evalValueType(tokens.get(i+2).type)));
+							i++;
+						} else {
+							//unitless
+							values.add(new Value(temp, ValueType.SCALAR));
+						}
+					}
+				}
+				else if (tokens.get(i).type == Type.NUMBER){
+					// it is a number and has a unit.
+					if (i+1 < tokens.size() && tokens.get(i+1).type.isUnit()){
+						values.add(new Value(Double.parseDouble(tokens.get(i).text) * (tokens.get(i+1).type == Type.INCH ? PT_PER_IN : 1), evalValueType(tokens.get(i+1).type)));
 						i++; // advance pointer past the unit.
 					} else {
 						// unitless
 						values.add(new Value(Double.parseDouble(tokens.get(i).text), ValueType.SCALAR));
 					}
-				} else if (tokens.get(i).isOperation()){
+				} else if (tokens.get(i).type.isOperation()){
 					// it is an operation
 					operations.add(tokens.get(i).type);
 				}
@@ -86,8 +118,33 @@ class Parser {
 //				throw new ParserException("Order of operations not made explicit.");
 
 			// actual evaluation
-			for (int i = 0; i < operations.size(); i++){
-				result = result.operate(values.get(i), operations.get(i));
+			int priorityCount = 0;
+
+			// count the number of priority operations to do first. (division and multiplication.)
+			for (Type operation: operations){
+				if (operation.isPriority())
+					priorityCount++;
+			}
+
+			while (priorityCount != 0) {
+				for (int i = 0; i < operations.size(); i++) {
+					// look for multiplication and division first. instead of using the result,
+					// we modify the values directly to be used by the normal operations.
+					// this is to preserve the order.
+					if (operations.get(i).isPriority()) {
+						values.set(i-1, values.get(i-1).operate(values.get(i), operations.remove(i)));
+						values.remove(i);
+						priorityCount--;
+					}
+				}
+			}
+
+			// handle the other operations.
+			for (int i = 0; i < operations.size(); i++) {
+				if (values.size() > i)
+					result = result.operate(values.get(i), operations.get(i));
+				else
+					result = result.operate(null, operations.get(i));
 			}
 
 			return result;
@@ -122,17 +179,48 @@ class Parser {
 		}
 
 		public Value operate(Value value, Type operation){
+			ValueType type = ValueType.SCALAR;
 			switch (operation){
 				case PLUS:
-					return new Value(this.value + value.value, ValueType.SCALAR);
+					if (this.type == ValueType.SCALAR && value.type == ValueType.INCHES) // as per manual
+						type = ValueType.INCHES;
+					else
+						type = this.type;
+					System.out.println(this.value + " " + value + " " + type);
+					return new Value(this.value + value.value, type);
 				case MINUS:
-					return new Value(this.value - value.value, ValueType.SCALAR);
+					return new Value(this.value - value.value, type);
 				case TIMES:
-					return new Value(this.value * value.value, ValueType.SCALAR);
+					// inches * scalar = inches
+					// scalar * points = points
+					// inches * points = points
+					if (this.type == ValueType.INCHES || value.type == ValueType.INCHES)
+						type = ValueType.INCHES;
+					if (this.type == ValueType.POINTS || value.type == ValueType.POINTS)
+						type = ValueType.POINTS;
+
+					return new Value(this.value * value.value, type);
+
 				case DIVIDE:
 					if (value.value == 0)
 						throw new ParserException("Division by zero.");
-					return new Value(this.value / value.value, ValueType.SCALAR);
+
+					// scalar / inches = inches
+					// scalar / points = points
+					// inches / points AND points / inches = scalar
+					if (this.type == ValueType.SCALAR)
+						type = value.type;
+					else if (this.type == ValueType.INCHES || this.type == ValueType.POINTS)
+						if (value.type == ValueType.SCALAR) // maintain the units
+							type = this.type;
+
+					return new Value(this.value / value.value, this.type);
+				case CAST_TO_INCH:
+					return new Value(this.value, ValueType.INCHES);
+				case CAST_TO_POINT:
+					return new Value(this.value, ValueType.POINTS);
+				case START:
+					return new Value(value.value, value.type);
 				default:
 					throw new ParserException("Unreachable.");
 			}
@@ -200,9 +288,9 @@ class Parser {
 				case IS_OPERATION:
 					equation.tokens.add(token);
 					// if it is an operation, it should not be a unit nor an operation after.
-					if (prevState == State.IS_OPERATION)
+					if (prevState == State.IS_OPERATION && token.type != Type.MINUS)
 						throw new ParserException("Cannot have an operation after an operation.");
-					if (prevState == State.IS_L_PAREN)
+					if (prevState == State.IS_L_PAREN && token.type != Type.MINUS)
 						throw new ParserException("Invalid Left parenthesis before operator.");
 					break;
 				case IS_L_PAREN:
@@ -215,9 +303,15 @@ class Parser {
 						throw new ParserException("No implicit multiplication with parenthesis allowed.");
 					break;
 				case IS_UNIT:
-					equation.tokens.add(token);
-					if (prevState == State.IS_UNIT)
-						throw new ParserException("Cannot have a unit after a unit.");
+					if (prevState == State.IS_NUMBER)
+						equation.tokens.add(token);
+					// if it not a number before a unit, it is a casting.
+					else if (token.type == Type.INCH)
+						equation.tokens.add(new Lexer.Token(Type.CAST_TO_INCH));
+					else if (token.type == Type.POINT)
+						equation.tokens.add(new Lexer.Token(Type.CAST_TO_POINT));
+
+					// check for invalids
 					if (prevState == State.IS_OPERATION)
 						throw new ParserException("Cannot have an operation before a unit.");
 					break;
@@ -258,9 +352,9 @@ class Parser {
 			state = State.IS_R_PAREN;
 		} else if (token.type == Type.NUMBER){
 			state = State.IS_NUMBER;
-		} else if (token.isOperation()){
+		} else if (token.type.isOperation()){
 			state = State.IS_OPERATION;
-		} else if (token.isUnit()){
+		} else if (token.type.isUnit()){
 			state = State.IS_UNIT;
 		}
 	}

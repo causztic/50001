@@ -17,9 +17,14 @@ public class MultiUnitCalculator {
 	 *         units, e.g. "72pt", "3", or "4.882in"
 	 */
 	public String evaluate(String expression) {
-		Lexer lexer = new Lexer(expression);
-		Parser parser = new Parser(lexer);
-		return parser.evaluate().toString();
+		try {
+			Lexer lexer = new Lexer(expression);
+			Parser parser = new Parser(lexer);
+			return parser.evaluate().toString();
+		} catch (Lexer.TokenMismatchException e){
+			System.out.println(e);
+			return null;
+		}
 	}
 
 	/**

@@ -19,6 +19,7 @@ public class TestMultiUnitCalculator extends TestCase{
     public void testBasicOperations(){
         assertEquals("Failed assertion for addition", "5.0", calc.evaluate("(1+4)"));
         assertEquals("Failed assertion for decimal addition", "6.2", calc.evaluate("(6+0.2)"));
+        assertEquals("Failed assertion for negative numbers", "-3.0", calc.evaluate("(-4+1)"));
         assertEquals("Failed assertion for subtraction", "16.0", calc.evaluate("(25-9)"));
         assertEquals("Failed assertion for division", "4.0", calc.evaluate("(20 / 5)"));
         assertEquals("Failed assertion for multiplication", "42.0", calc.evaluate("(6*7)"));
